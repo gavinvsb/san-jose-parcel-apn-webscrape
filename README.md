@@ -6,7 +6,7 @@ Webscrapes, lightly cleans, and returns property tax data for San Jose propertie
 Because the requested data size for this particular analysis was over 225,000 records, most consumer computers encounter computation and memory errors.
 Consequently, the python code must be run on chunks of the entire APN list. Computation on eleven chunks were successfully performed from an ordinary personal computer.
 
-## Output: More than 50 columns listing various property tax data across the APNs.
+## Output: More than 50 columns listing various property tax data across each APN.
 
 ## Running the code
 This code will not just run for you out-of-the-box. You will need to download packages and prepare the environment for each run.
