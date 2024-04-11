@@ -7,26 +7,47 @@ import pickle
 # comment and uncomment based on which data chunk which is to be cleaned
 dbfile0 = open('county_data_0.pkl', 'rb')
 db0 = pickle.load(dbfile0)
+dbfile0.close()
+
 # dbfile1 = open('county_data_1.pkl', 'rb')
 # db1 = pickle.load(dbfile1)
+# dbfile1.close()
+
 # dbfile2 = open('county_data_2.pkl', 'rb')
 # db2 = pickle.load(dbfile2)
+# dbfile2.close()
+
 # dbfile3 = open('county_data_3.pkl', 'rb')
 # db3 = pickle.load(dbfile3)
+# dbfile3.close()
+
 # dbfile4 = open('county_data_4.pkl', 'rb')
 # db4 = pickle.load(dbfile4)
+# dbfile4.close()
+
 # dbfile5 = open('county_data_5.pkl', 'rb')
 # db5 = pickle.load(dbfile5)
+# dbfile5.close()
+
 # dbfile6 = open('county_data_6.pkl', 'rb')
 # db6 = pickle.load(dbfile6)
+# dbfile6.close()
+
 # dbfile7 = open('county_data_7.pkl', 'rb')
 # db7 = pickle.load(dbfile7)
+# dbfile7.close()
+
 # dbfile8 = open('county_data_8.pkl', 'rb')
 # db8 = pickle.load(dbfile8)
+# dbfile8.close()
+
 # dbfile9 = open('county_data_9.pkl', 'rb')
 # db9 = pickle.load(dbfile9)
+# dbfile9.close()
+
 # dbfile10 = open('county_data_10.pkl', 'rb')
 # db10 = pickle.load(dbfile10)
+# dbfile10.close()
 
 print(f'finished loading data to memory')
 
