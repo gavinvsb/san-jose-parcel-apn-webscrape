@@ -1,144 +1,139 @@
 import undetected_chromedriver as uc
 from random import randint
-from time import sleep
+from time import sleep, time
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.keys import Keys
 from bs4 import BeautifulSoup
 from pathlib import Path
 import pandas as pd
-import json
-import time
 import pickle
 import os
-import datetime
-
 import multiprocessing as mp
 
-num_processes = 20
-# sample_size = 20 # TEST RUN
-sample_size = None # REAL RUN
+# Configuration
+NUM_PROCESSES = 20
+SAMPLE_SIZE = None  # Set to a number for test runs, or None for full data run
+CSV_FILES_TO_RUN = [1]  # Specify which CSV files to process
 
-# select which of the subset of csvs to compute
-csvs_to_run = [1]
-
-def process_apn(APN, df_dict, driver):
+def process_apn(apn, df_dict, driver):
+    """Fetch and process data for a given APN."""
     driver.get('https://payments.sccgov.org/PropertyTax/Secured')
-    apn_input = driver.find_element(By.XPATH, '/html/body/div[2]/div/div[2]/div[1]/div[3]/div/div/form/div/div/div/div[1]/input')
-    actions = ActionChains(driver)
-    actions.move_to_element(apn_input).click().perform()
-    apn_input.send_keys(APN)
-    form_submit_input = driver.find_element(By.XPATH, '/html/body/div[2]/div/div[2]/div[1]/div[3]/div/div/form/div/div/div/div[2]/button')
-    form_submit_input.send_keys(Keys.ENTER)
-    try:
-        df_dict[APN] = pd.read_html(BeautifulSoup(driver.page_source, 'html.parser').prettify())
-    except:
-        df_dict[APN] = driver.find_element(By.XPATH, '/html/body/div[2]/div/div[2]/div[1]/div[3]/div/div/form/div/div/span').text
-        return
 
+    try:
+        # Enter APN in input field and submit form
+        apn_input = driver.find_element(By.XPATH, 
+            '/html/body/div[2]/div/div[2]/div[1]/div[3]/div/div/form/div/div/div/div[1]/input')
+        ActionChains(driver).move_to_element(apn_input).click().perform()
+        apn_input.send_keys(apn)
+
+        submit_btn = driver.find_element(By.XPATH, 
+            '/html/body/div[2]/div/div[2]/div[1]/div[3]/div/div/form/div/div/div/div[2]/button')
+        submit_btn.send_keys(Keys.ENTER)
+
+        # Extract table data using BeautifulSoup
+        df_dict[apn] = pd.read_html(BeautifulSoup(driver.page_source, 'html.parser').prettify())
+
+    except Exception:
+        # If there's no data available, store the error message
+        df_dict[apn] = driver.find_element(By.XPATH, 
+            '/html/body/div[2]/div/div[2]/div[1]/div[3]/div/div/form/div/div/span').text
 
 class WebProcess(mp.Process):
-
+    """Multiprocessing class for handling parallel APN data extraction."""
+    
     def __init__(self, apn_queue, df_dict):
-        mp.Process.__init__(self)
+        super().__init__()
         self.apn_queue = apn_queue
         self.df_dict = df_dict
-        self.df_dict['processes'] = str(int(self.df_dict['processes']) + 1)
-        
+        self.df_dict['processes'] = str(int(self.df_dict.get('processes', 0)) + 1)
+
     def run(self):
+        """Main loop for processing APNs."""
+        driver = uc.Chrome()
+
         try:
-            proc_name = self.name
-            driver = uc.Chrome()
             while True:
-                next_apn = self.apn_queue.get()
-                if next_apn is None:
-                    # Poison pill means we should exit
-                    print('%s: Exiting' % proc_name)
-                    driver.quit()
-                    self.shutdown()
+                apn = self.apn_queue.get()
+                if apn is None:  # Poison pill to signal process termination
+                    print(f'{self.name}: Exiting')
                     break
-                process_apn(next_apn, self.df_dict, driver)
+                process_apn(apn, self.df_dict, driver)
         except Exception as e:
-            print(e)
+            print(f'Error in {self.name}: {e}')
+        finally:
+            driver.quit()
             self.shutdown()
-        return
 
     def shutdown(self):
+        """Decrement the active process count."""
         self.df_dict['processes'] = str(int(self.df_dict['processes']) - 1)
 
-if __name__ == '__main__':
-    # parcels_df = pd.read_csv("Parcels.csv", dtype=str)
+def main():
+    """Main function to coordinate multiprocessing and data collection."""
+    for csv_num in CSV_FILES_TO_RUN:
+        start_time = time()
 
-    # for i in range(9):
-    #     parcels_df[i * 25000 : (i + 1) * 25000 ].to_csv('csvs/Parcels_%d.csv' % i)
-    # parcels_df[9 * 25000 : ].to_csv('csvs/Parcels_%d.csv' % 9)
-    
-    t1 = time.time()
-
-    with mp.Manager() as manager:
-
-        for n in csvs_to_run:
+        with mp.Manager() as manager:
             df_dict = manager.dict()
             apn_queue = mp.Queue()
             df_dict['processes'] = '0'
 
-            processes = [ WebProcess(apn_queue, df_dict) for i in range(num_processes)]
-            try:
-                for p in processes:
-                    p.start()
-            except Exception as e:
-                print(e)
+            # Start worker processes
+            processes = [WebProcess(apn_queue, df_dict) for _ in range(NUM_PROCESSES)]
+            for p in processes:
+                p.start()
 
-            parcels_df = pd.read_csv("csvs/Parcels_%d.csv" % n, dtype=str)
-            print('no apn found on %d lines' % parcels_df[parcels_df.NOTES =='No APN, data reviewer correction.'].shape[0])
-            parcels_df = parcels_df[parcels_df.NOTES !='No APN, data reviewer correction.']
-            if sample_size != None:
-                for APN in parcels_df['APN'].sample(n=sample_size, random_state=201):
-                    # print('adding apn')
-                    apn_queue.put(APN)
-            else:
-                for APN in parcels_df['APN']:
-                    # print('adding apn')
-                    apn_queue.put(APN)
+            # Load parcel data and filter out rows with missing APNs
+            parcels_df = pd.read_csv(f"csvs/Parcels_{csv_num}.csv", dtype=str)
+            parcels_df = parcels_df[parcels_df.NOTES != 'No APN, data reviewer correction.']
+            print(f'{parcels_df[parcels_df.NOTES == "No APN, data reviewer correction."].shape[0]} lines skipped')
 
-            for i in range(num_processes):
+            # Add APNs to the processing queue
+            apns = parcels_df['APN'].sample(n=SAMPLE_SIZE, random_state=201) if SAMPLE_SIZE else parcels_df['APN']
+            for apn in apns:
+                apn_queue.put(apn)
+
+            # Add poison pills to terminate processes
+            for _ in range(NUM_PROCESSES):
                 apn_queue.put(None)
 
-            time.sleep(5)
-            print('initial file write')
-            current_pickle_fname = 'county_data_%d.pkl' % n
-            old_pickle_fname = 'county_data_%d_old.pkl' % n
-            with open(current_pickle_fname,'wb') as file:
-                pickl_dict = {}
-                pickl_dict.update(df_dict)
-                pickle.dump(pickl_dict, file)
+            # Write initial pickle file
+            write_pickle(df_dict, f'county_data_{csv_num}.pkl')
 
-            while df_dict['processes'] != '0':
-                # print(df_dict['processes'])
-                time.sleep(300)
-                print('writing to temp pkl file')
-                if os.path.isfile(current_pickle_fname):
-                    size = Path(current_pickle_fname).stat().st_size
-                    if size < 3:
-                        print('pkl file empty')
-                        print('last entry in object: ' + df_dict.tail(10))
-                        exit()
-                    if os.path.isfile(old_pickle_fname):
-                        os.remove(old_pickle_fname)
-                    os.rename(current_pickle_fname, old_pickle_fname)
-                with open(current_pickle_fname,'wb') as file:
-                    pickl_dict = {}
-                    pickl_dict.update(df_dict)
-                    pickle.dump(pickl_dict, file)
+            # Monitor and periodically save progress
+            monitor_progress(df_dict, csv_num)
 
-            print(df_dict)
+            # Wait for all processes to finish
+            for p in processes:
+                p.join()
 
-            t2 = time.time()
-            print(f'csv {n} elapsed time: {t2-t1} seconds')
-            pickle_fname = 'county_data_%d.pkl' % n
-            if not os.path.isfile(pickle_fname):
-                with open(pickle_fname,'wb') as file:
-                    pickl_dict = {}
-                    pickl_dict.update(df_dict)
-                    pickle.dump(pickl_dict, file)
-            print(f"collection done!")
+            print(f'CSV {csv_num} processing completed in {time() - start_time:.2f} seconds')
+
+def write_pickle(df_dict, filename):
+    """Save the current state of the data to a pickle file."""
+    with open(filename, 'wb') as file:
+        pickle.dump(dict(df_dict), file)
+
+def monitor_progress(df_dict, csv_num):
+    """Monitor the progress and save interim results every 5 minutes."""
+    current_pickle = f'county_data_{csv_num}.pkl'
+    old_pickle = f'county_data_{csv_num}_old.pkl'
+
+    while df_dict['processes'] != '0':
+        sleep(300)  # Wait for 5 minutes before next save
+        print('Writing progress to temporary pickle file...')
+
+        # Rotate old pickle files
+        if os.path.isfile(current_pickle):
+            if Path(current_pickle).stat().st_size < 3:
+                print('Pickle file is empty, exiting...')
+                exit()
+            if os.path.isfile(old_pickle):
+                os.remove(old_pickle)
+            os.rename(current_pickle, old_pickle)
+
+        write_pickle(df_dict, current_pickle)
+
+if __name__ == '__main__':
+    main()
